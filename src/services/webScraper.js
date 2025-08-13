@@ -177,91 +177,133 @@ class WebScraperService {
   }
 
   /**
-   * Extrair documentação específica do SAP
+   * Extrair documentação específica do SAP UI5 com seletores otimizados
    * @param {Object} $ - Instância do Cheerio
    * @returns {Object} Documentação estruturada
    */
   extractSAPDocumentation($) {
     const documentation = {
+      className: '',
       overview: '',
       constructor: {
         description: '',
-        parameters: []
+        parameters: [],
+        since: ''
       },
       properties: [],
       methods: [],
       events: [],
-      examples: []
+      examples: [],
+      inheritance: []
     };
 
     try {
-      // Extrair overview
+      // Remover elementos de navegação e interface desnecessários
+      const removeSelectors = [
+        '.sapUiSizeCompact',
+        '.sapUiDocumentationNavigation',
+        '.sapUiDocumentationHeader',
+        '.sapUiDocumentationFooter',
+        '.sapUiDocumentationSidebar',
+        '[role="navigation"]',
+        '[role="banner"]',
+        '[role="contentinfo"]',
+        '.sapUiDocumentationBreadcrumb',
+        '.sapUiDocumentationSearch',
+        '.sapUiDocumentationToolbar',
+        '.sapUiDocumentationMenu'
+      ];
+      
+      removeSelectors.forEach(sel => $(sel).remove());
+
+      // Extrair nome da classe
+      const classNameSelectors = [
+        'h1.sapUiDocumentationTitle',
+        '.sapUiDocumentationClassName',
+        'h1:contains("sap.")',
+        '.apiDetailHeader h1'
+      ];
+      
+      for (const selector of classNameSelectors) {
+        const className = $(selector).first().text().trim();
+        if (className && className.includes('sap.')) {
+          documentation.className = className;
+          break;
+        }
+      }
+
+      // Extrair overview/descrição principal
       const overviewSelectors = [
-        '.sapUiDocumentationOverview',
-        '[data-section="overview"]',
-        '.overview',
-        '.description',
-        'p:first-of-type'
+        '.sapUiDocumentationOverview p',
+        '.apiDetailOverview',
+        '.sapUiDocumentationDescription',
+        '[data-sap-ui-area="overview"] p',
+        '.overview-section p'
       ];
       
       for (const selector of overviewSelectors) {
         const overview = $(selector).first().text().trim();
-        if (overview && overview.length > 20) {
+        if (overview && overview.length > 50) {
           documentation.overview = overview;
           break;
         }
       }
 
       // Extrair informações do construtor
-      const constructorSection = $('#Constructor, [data-section="constructor"]').parent();
+      const constructorSection = $('[data-sap-ui-area="constructor"], #constructor, .constructor-section').first();
       if (constructorSection.length > 0) {
         documentation.constructor.description = constructorSection.find('p').first().text().trim();
+        documentation.constructor.since = constructorSection.find('.since, [class*="since"]').text().trim();
         
         // Extrair parâmetros do construtor
-        constructorSection.find('table tr').each((i, row) => {
+        constructorSection.find('table.sapUiDocumentationTable tr, .parameters-table tr').each((i, row) => {
           if (i === 0) return; // Skip header
           const cells = $(row).find('td');
           if (cells.length >= 3) {
             documentation.constructor.parameters.push({
               name: $(cells[0]).text().trim(),
               type: $(cells[1]).text().trim(),
-              description: $(cells[2]).text().trim()
+              description: $(cells[2]).text().trim(),
+              optional: $(cells[0]).text().includes('?')
             });
           }
         });
       }
 
       // Extrair propriedades
-      const propertiesSection = $('#Properties, [data-section="properties"]').parent();
-      propertiesSection.find('.sapUiDocumentationProperty, [class*="property"]').each((i, prop) => {
+      const propertiesSection = $('[data-sap-ui-area="properties"], #properties, .properties-section');
+      propertiesSection.find('.sapUiDocumentationProperty, .property-item').each((i, prop) => {
         const property = {
-          name: $(prop).find('h4, h5, .property-name').first().text().trim(),
-          type: $(prop).find('.type, [class*="type"]').first().text().trim(),
-          defaultValue: $(prop).find('.default, [class*="default"]').first().text().trim(),
-          description: $(prop).find('p').first().text().trim(),
-          deprecated: $(prop).find('.deprecated, [class*="deprecated"]').length > 0
+          name: $(prop).find('.property-name, h4, h5').first().text().trim(),
+          type: $(prop).find('.property-type, .type').first().text().trim(),
+          defaultValue: $(prop).find('.property-default, .default-value').first().text().trim(),
+          description: $(prop).find('.property-description, p').first().text().trim(),
+          since: $(prop).find('.since').text().trim(),
+          deprecated: $(prop).find('.deprecated').length > 0
         };
         
-        if (property.name) {
+        if (property.name && !property.name.includes('Linha de mensagem')) {
           documentation.properties.push(property);
         }
       });
 
       // Extrair métodos
-      const methodsSection = $('#Methods, [data-section="methods"]').parent();
-      methodsSection.find('.sapUiDocumentationMethod, [class*="method"]').each((i, method) => {
+      const methodsSection = $('[data-sap-ui-area="methods"], #methods, .methods-section');
+      methodsSection.find('.sapUiDocumentationMethod, .method-item').each((i, method) => {
         const methodData = {
-          name: $(method).find('h4, h5, .method-name').first().text().trim(),
-          description: $(method).find('p').first().text().trim(),
+          name: $(method).find('.method-name, h4, h5').first().text().trim(),
+          description: $(method).find('.method-description, p').first().text().trim(),
           parameters: [],
           returns: {
-            type: $(method).find('.returns .type, [class*="return-type"]').first().text().trim(),
-            description: $(method).find('.returns p, [class*="return-desc"]').first().text().trim()
-          }
+            type: $(method).find('.return-type').text().trim(),
+            description: $(method).find('.return-description').text().trim()
+          },
+          since: $(method).find('.since').text().trim(),
+          deprecated: $(method).find('.deprecated').length > 0
         };
         
         // Extrair parâmetros do método
-        $(method).find('table tr').each((j, row) => {
+        $(method).find('table tr, .parameters tr').each((j, row) => {
           if (j === 0) return; // Skip header
           const cells = $(row).find('td');
           if (cells.length >= 3) {
@@ -269,26 +311,28 @@ class WebScraperService {
               name: $(cells[0]).text().trim(),
               type: $(cells[1]).text().trim(),
               description: $(cells[2]).text().trim(),
-              optional: $(cells[0]).text().includes('?') || $(row).find('[class*="optional"]').length > 0
+              optional: $(cells[0]).text().includes('?')
             });
           }
         });
         
-        if (methodData.name) {
+        if (methodData.name && !methodData.name.includes('Linha de mensagem')) {
           documentation.methods.push(methodData);
         }
       });
 
       // Extrair eventos
-      const eventsSection = $('#Events, [data-section="events"]').parent();
-      eventsSection.find('.sapUiDocumentationEvent, [class*="event"]').each((i, event) => {
+      const eventsSection = $('[data-sap-ui-area="events"], #events, .events-section');
+      eventsSection.find('.sapUiDocumentationEvent, .event-item').each((i, event) => {
         const eventData = {
-          name: $(event).find('h4, h5, .event-name').first().text().trim(),
-          description: $(event).find('p').first().text().trim(),
-          parameters: []
+          name: $(event).find('.event-name, h4, h5').first().text().trim(),
+          description: $(event).find('.event-description, p').first().text().trim(),
+          parameters: [],
+          since: $(event).find('.since').text().trim()
         };
         
-        $(event).find('table tr').each((j, row) => {
+        // Extrair parâmetros do evento
+        $(event).find('table tr, .parameters tr').each((j, row) => {
           if (j === 0) return; // Skip header
           const cells = $(row).find('td');
           if (cells.length >= 3) {
@@ -300,20 +344,30 @@ class WebScraperService {
           }
         });
         
-        if (eventData.name) {
+        if (eventData.name && !eventData.name.includes('Linha de mensagem')) {
           documentation.events.push(eventData);
         }
       });
 
-      // Extrair exemplos
-      $('pre, code, .example, [class*="example"]').each((i, example) => {
+      // Extrair exemplos de código
+      $('pre code, .code-example, .sapUiDocumentationExample').each((i, example) => {
         const code = $(example).text().trim();
-        if (code && code.length > 10) {
+        if (code && code.length > 20 && !code.includes('Linha de mensagem')) {
           documentation.examples.push({
-            type: example.tagName.toLowerCase(),
+            type: 'code',
+            language: $(example).attr('class')?.match(/language-(\w+)/)?.[1] || 'javascript',
             code: code,
-            language: $(example).attr('class')?.match(/language-(\w+)/)?.[1] || 'javascript'
+            description: $(example).prev('p').text().trim()
           });
+        }
+      });
+
+      // Extrair hierarquia de herança
+      const inheritanceSection = $('[data-sap-ui-area="inheritance"], .inheritance, .extends');
+      inheritanceSection.find('a, .class-link').each((i, link) => {
+        const className = $(link).text().trim();
+        if (className && className.includes('sap.')) {
+          documentation.inheritance.push(className);
         }
       });
 

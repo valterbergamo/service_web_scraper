@@ -1,104 +1,167 @@
 class DocumentationFormatter {
-  static formatDocumentationOutput(doc) {
-    let output = '';
-    
-    try {
-      if (doc.title) {
-        output += `# ${doc.title}\n\n`;
-      }
-      
-      if (doc.overview || (doc.sapDocumentation && doc.sapDocumentation.overview)) {
-        const overview = doc.overview || doc.sapDocumentation.overview;
-        output += `## Overview\n${overview}\n\n`;
-      }
-      
-      if (doc.sapDocumentation && doc.sapDocumentation.constructor && doc.sapDocumentation.constructor.description) {
-        output += `## Constructor\n${doc.sapDocumentation.constructor.description}\n\n`;
-        
-        if (doc.sapDocumentation.constructor.parameters.length > 0) {
-          output += `### Parameters\n`;
-          doc.sapDocumentation.constructor.parameters.forEach(param => {
-            output += `- **${param.name}** (${param.type}): ${param.description}\n`;
-          });
-          output += '\n';
-        }
-      }
-      
-      const properties = doc.sapDocumentation?.properties || doc.properties || [];
-      if (properties.length > 0) {
-        output += `## Properties\n`;
-        properties.forEach(prop => {
-          output += `### ${prop.name}\n`;
-          if (prop.type) output += `**Type:** ${prop.type}\n`;
-          if (prop.defaultValue) output += `**Default:** ${prop.defaultValue}\n`;
-          if (prop.description) output += `${prop.description}\n`;
-          if (prop.deprecated) output += `**(Deprecated)**\n`;
-          output += '\n';
-        });
-      }
-      
-      const methods = doc.sapDocumentation?.methods || doc.methods || [];
-      if (methods.length > 0) {
-        output += `## Methods\n`;
-        methods.forEach(method => {
-          output += `### ${method.name}\n`;
-          if (method.description) output += `${method.description}\n\n`;
-          
-          if (method.parameters && method.parameters.length > 0) {
-            output += `**Parameters:**\n`;
-            method.parameters.forEach(param => {
-              const optional = param.optional ? ' (optional)' : '';
-              output += `- **${param.name}** (${param.type})${optional}: ${param.description}\n`;
-            });
-            output += '\n';
-          }
-          
-          if (method.returns && method.returns.type) {
-            output += `**Returns:** ${method.returns.type}`;
-            if (method.returns.description) {
-              output += ` - ${method.returns.description}`;
-            }
-            output += '\n\n';
-          }
-        });
-      }
-      
-      const events = doc.sapDocumentation?.events || doc.events || [];
-      if (events.length > 0) {
-        output += `## Events\n`;
-        events.forEach(event => {
-          output += `### ${event.name}\n`;
-          if (event.description) output += `${event.description}\n\n`;
-          
-          if (event.parameters && event.parameters.length > 0) {
-            output += `**Parameters:**\n`;
-            event.parameters.forEach(param => {
-              output += `- **${param.name}** (${param.type}): ${param.description}\n`;
-            });
-            output += '\n';
-          }
-        });
-      }
-      
-      const examples = doc.sapDocumentation?.examples || doc.examples || [];
-      if (examples.length > 0) {
-        output += `## Examples\n`;
-        examples.forEach((example, index) => {
-          output += `### Example ${index + 1}\n`;
-          output += `\`\`\`${example.language || 'javascript'}\n${example.code}\n\`\`\`\n\n`;
-        });
-      }
-      
-      if (doc.content && !doc.sapDocumentation) {
-        output += `## Content\n${doc.content}\n\n`;
-      }
-      
-    } catch (error) {
-      console.error('Erro ao formatar documentação:', error.message);
-      output += `\n\n**Erro na formatação:** ${error.message}\n`;
+  /**
+   * Formatar documentação SAP em texto estruturado
+   * @param {Object} documentation - Documentação extraída
+   * @returns {string} Texto formatado
+   */
+  static formatDocumentationOutput(documentation) {
+    if (!documentation || !documentation.sapDocumentation) {
+      return this.formatToText(documentation);
     }
-    
-    return output;
+
+    const sapDoc = documentation.sapDocumentation;
+    let output = [];
+
+    // Cabeçalho
+    output.push('================================================================================');
+    output.push(`DOCUMENTAÇÃO SAP UI5: ${sapDoc.className || 'Classe não identificada'}`);
+    output.push('================================================================================');
+    output.push('');
+
+    // Overview
+    if (sapDoc.overview) {
+      output.push('📋 OVERVIEW');
+      output.push('─'.repeat(50));
+      output.push(sapDoc.overview);
+      output.push('');
+    }
+
+    // Constructor
+    if (sapDoc.constructor && (sapDoc.constructor.description || sapDoc.constructor.parameters.length > 0)) {
+      output.push('🏗️ CONSTRUCTOR');
+      output.push('─'.repeat(50));
+      
+      if (sapDoc.constructor.description) {
+        output.push(sapDoc.constructor.description);
+        output.push('');
+      }
+      
+      if (sapDoc.constructor.since) {
+        output.push(`Since: ${sapDoc.constructor.since}`);
+        output.push('');
+      }
+      
+      if (sapDoc.constructor.parameters.length > 0) {
+        output.push('Parâmetros:');
+        sapDoc.constructor.parameters.forEach(param => {
+          output.push(`  • ${param.name}${param.optional ? '?' : ''} (${param.type}): ${param.description}`);
+        });
+        output.push('');
+      }
+    }
+
+    // Properties
+    if (sapDoc.properties && sapDoc.properties.length > 0) {
+      output.push('🔧 PROPERTIES');
+      output.push('─'.repeat(50));
+      
+      sapDoc.properties.forEach(prop => {
+        output.push(`${prop.name} (${prop.type})`);
+        if (prop.defaultValue) {
+          output.push(`  Default: ${prop.defaultValue}`);
+        }
+        if (prop.description) {
+          output.push(`  ${prop.description}`);
+        }
+        if (prop.since) {
+          output.push(`  Since: ${prop.since}`);
+        }
+        if (prop.deprecated) {
+          output.push(`  ⚠️ DEPRECATED`);
+        }
+        output.push('');
+      });
+    }
+
+    // Methods
+    if (sapDoc.methods && sapDoc.methods.length > 0) {
+      output.push('⚙️ METHODS');
+      output.push('─'.repeat(50));
+      
+      sapDoc.methods.forEach(method => {
+        output.push(`${method.name}()`);
+        if (method.description) {
+          output.push(`  ${method.description}`);
+        }
+        
+        if (method.parameters.length > 0) {
+          output.push('  Parâmetros:');
+          method.parameters.forEach(param => {
+            output.push(`    • ${param.name}${param.optional ? '?' : ''} (${param.type}): ${param.description}`);
+          });
+        }
+        
+        if (method.returns && method.returns.type) {
+          output.push(`  Retorna: ${method.returns.type}`);
+          if (method.returns.description) {
+            output.push(`    ${method.returns.description}`);
+          }
+        }
+        
+        if (method.since) {
+          output.push(`  Since: ${method.since}`);
+        }
+        
+        if (method.deprecated) {
+          output.push(`  ⚠️ DEPRECATED`);
+        }
+        
+        output.push('');
+      });
+    }
+
+    // Events
+    if (sapDoc.events && sapDoc.events.length > 0) {
+      output.push('📡 EVENTS');
+      output.push('─'.repeat(50));
+      
+      sapDoc.events.forEach(event => {
+        output.push(`${event.name}`);
+        if (event.description) {
+          output.push(`  ${event.description}`);
+        }
+        
+        if (event.parameters.length > 0) {
+          output.push('  Parâmetros:');
+          event.parameters.forEach(param => {
+            output.push(`    • ${param.name} (${param.type}): ${param.description}`);
+          });
+        }
+        
+        if (event.since) {
+          output.push(`  Since: ${event.since}`);
+        }
+        
+        output.push('');
+      });
+    }
+
+    // Examples
+    if (sapDoc.examples && sapDoc.examples.length > 0) {
+      output.push('💡 EXAMPLES');
+      output.push('─'.repeat(50));
+      
+      sapDoc.examples.forEach((example, index) => {
+        output.push(`Exemplo ${index + 1} (${example.language}):`);
+        if (example.description) {
+          output.push(example.description);
+        }
+        output.push('```' + example.language);
+        output.push(example.code);
+        output.push('```');
+        output.push('');
+      });
+    }
+
+    // Inheritance
+    if (sapDoc.inheritance && sapDoc.inheritance.length > 0) {
+      output.push('🔗 INHERITANCE');
+      output.push('─'.repeat(50));
+      output.push('Extends: ' + sapDoc.inheritance.join(' → '));
+      output.push('');
+    }
+
+    return output.join('\n');
   }
 
   static formatToMarkdown(doc) {
