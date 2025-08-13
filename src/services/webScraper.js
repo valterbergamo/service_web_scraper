@@ -121,10 +121,20 @@ class WebScraperService {
           result.html = selectedElement.html();
         } else {
           console.warn(`⚠️ Seletor não encontrado: ${selector}`);
-          result.content = $('body').text().trim();
+          // ✅ MUDANÇA AQUI: Para páginas SAP, usar extração específica
+          if (url.includes('sapui5') || url.includes('sap.com')) {
+            result.content = this.extractCleanSAPContent($);
+          } else {
+            result.content = $('body').text().trim();
+          }
         }
       } else {
-        result.content = $('body').text().trim();
+        // ✅ MUDANÇA AQUI: Para páginas SAP, usar extração específica
+        if (url.includes('sapui5') || url.includes('sap.com')) {
+          result.content = this.extractCleanSAPContent($);
+        } else {
+          result.content = $('body').text().trim();
+        }
       }
       
       // Extrair imagens se solicitado
@@ -174,6 +184,100 @@ class WebScraperService {
         await page.close();
       }
     }
+  }
+
+  /**
+   * Extrair conteúdo limpo específico para páginas SAP UI5
+   * @param {Object} $ - Instância do Cheerio
+   * @returns {string} Conteúdo formatado
+   */
+  extractCleanSAPContent($) {
+    // Remover elementos de interface desnecessários
+    const removeSelectors = [
+      '.sapUiSizeCompact',
+      '.sapUiDocumentationNavigation',
+      '.sapUiDocumentationHeader',
+      '.sapUiDocumentationFooter',
+      '.sapUiDocumentationSidebar',
+      '[role="navigation"]',
+      '[role="banner"]',
+      '[role="contentinfo"]',
+      '.sapUiDocumentationBreadcrumb',
+      '.sapUiDocumentationSearch',
+      '.sapUiDocumentationToolbar',
+      '.sapUiDocumentationMenu',
+      '.sapUiMessageStrip',
+      '.sapMMessageStrip',
+      '[class*="message"]',
+      '[class*="Message"]',
+      '.sapUiDocumentationSampleContainer',
+      '.sapUiDocumentationExplorer'
+    ];
+    
+    removeSelectors.forEach(sel => $(sel).remove());
+    
+    let cleanContent = '';
+    
+    // Extrair título principal
+    const title = $('h1.sapUiDocumentationTitle, .apiDetailHeader h1, h1:contains("sap.")').first().text().trim();
+    if (title) {
+      cleanContent += `# ${title}\n\n`;
+    }
+    
+    // Extrair overview/descrição
+    const overview = $('.sapUiDocumentationOverview p, .apiDetailOverview, .overview-section p').first().text().trim();
+    if (overview && overview.length > 50) {
+      cleanContent += `## Overview\n${overview}\n\n`;
+    }
+    
+    // Extrair seções principais
+    const sections = ['constructor', 'properties', 'methods', 'events', 'examples'];
+    
+    sections.forEach(section => {
+      const sectionElement = $(`[data-sap-ui-area="${section}"], #${section}, .${section}-section`).first();
+      if (sectionElement.length > 0) {
+        cleanContent += `## ${section.charAt(0).toUpperCase() + section.slice(1)}\n`;
+        
+        // Extrair conteúdo da seção sem elementos de interface
+        const sectionText = sectionElement.clone()
+          .find('.sapUiMessageStrip, .sapMMessageStrip, [class*="message"], [class*="Message"]')
+          .remove()
+          .end()
+          .text()
+          .trim()
+          .replace(/\s+/g, ' ')
+          .replace(/Linha de mensagem.*?encerramento/g, '')
+          .replace(/Selecionar uma opção do menu/g, '')
+          .replace(/Valores disponíveis/g, '')
+          .trim();
+        
+        if (sectionText && sectionText.length > 20) {
+          cleanContent += `${sectionText}\n\n`;
+        }
+      }
+    });
+    
+    // Se não conseguiu extrair conteúdo estruturado, tentar extrair do conteúdo principal
+    if (cleanContent.length < 100) {
+      const mainContent = $('.sapUiDocumentationContent, .apiDetail, main, .content').first();
+      if (mainContent.length > 0) {
+        cleanContent = mainContent.clone()
+          .find('.sapUiMessageStrip, .sapMMessageStrip, [class*="message"], [class*="Message"], [role="navigation"], [role="banner"]')
+          .remove()
+          .end()
+          .text()
+          .trim()
+          .replace(/\s+/g, ' ')
+          .replace(/Linha de mensagem.*?encerramento/g, '')
+          .replace(/Selecionar uma opção do menu/g, '')
+          .replace(/Valores disponíveis/g, '')
+          .replace(/Comutar cabeçalho/g, '')
+          .replace(/Ações de cabeçalho/g, '')
+          .trim();
+      }
+    }
+    
+    return cleanContent || 'Conteúdo não encontrado';
   }
 
   /**
